@@ -8,7 +8,7 @@
 #include <sys/types.h>
 
 #define MAX_PENDING_CONNECTIONS 32
-#define MAX_MESSAGE_SIZE        128
+#define BUFFER_SIZE             1024
 
 /**
  * The entrance of the server application.
@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
     int udpSocketFileDescriptor = socket(AF_INET, SOCK_DGRAM, 0);
 
     if ( tcpSocketFileDescriptor == -1 || udpSocketFileDescriptor == -1 ) {
-        fprintf(stderr, "Failed to create socket: %s\n", strerror(errno));
+        fprintf(stderr, "[ERROR] Failed to create socket: %s\n", strerror(errno));
         exit(127);
     }
 
@@ -104,11 +104,11 @@ int main(int argc, char* argv[]) {
      * @return -1 if socket is failed to bind
      */
     if ( bind(tcpSocketFileDescriptor, (struct sockaddr*)(&serverSocketAddress), sockaddrSize) == -1) {
-        fprintf(stderr, "Failed to bind TCP socket file descriptor to specified address: %s\n", strerror(errno));
+        fprintf(stderr, "[ERROR] Failed to bind TCP socket file descriptor to specified address: %s\n", strerror(errno));
         exit(127);
     }
     if ( bind(udpSocketFileDescriptor, (struct sockaddr*)(&serverSocketAddress), sockaddrSize) == -1) {
-        fprintf(stderr, "Failed to bind UDP socket file descriptor to specified address: %s\n", strerror(errno));
+        fprintf(stderr, "[ERROR] Failed to bind UDP socket file descriptor to specified address: %s\n", strerror(errno));
         exit(127);
     }
 
@@ -122,33 +122,52 @@ int main(int argc, char* argv[]) {
      * @return -1 if socket is failed to listen
      */
     if ( listen(tcpSocketFileDescriptor, MAX_PENDING_CONNECTIONS) == -1 ) {
-        fprintf(stderr, "Failed to listen to the TCP socket: %s\n", strerror(errno));
+        fprintf(stderr, "[ERROR] Failed to listen to the TCP socket: %s\n", strerror(errno));
         exit(127);
     }
 
     /*
      * Infinite Loop for receiving connections from clients. 
      */
+    char inputBuffer[BUFFER_SIZE] = {0};
+    char outputBuffer[BUFFER_SIZE] = {0};
+
     while ( 1 ) {
         struct sockaddr_in clientSocketAddress;
         int clientSocketFileDescriptor = accept(tcpSocketFileDescriptor, (struct sockaddr *)(&clientSocketAddress), &sockaddrSize);
 
         if ( clientSocketFileDescriptor == -1 ) {
-            fprintf(stderr, "Failed to accpet a socket from client: %s\n", strerror(errno));
+            fprintf(stderr, "[WARN] Failed to accpet a socket from client: %s\n", strerror(errno));
             continue;
         }
-        
-        // Display logs in console
-        fprintf(stderr, "Connection established with %s\n", inet_ntoa(clientSocketAddress.sin_addr));
+        fprintf(stderr, "[INFO] Connection established with %s\n", inet_ntoa(clientSocketAddress.sin_addr));
 
-        // Send message to client
-        char message[MAX_MESSAGE_SIZE] = "Hello";
-        if ( write(clientSocketFileDescriptor, message, strlen(message)) == -1 ) {
-            fprintf(stderr, "Failed to send a message to client: %s\n", strerror(errno));
+        // Infinite Loop for receiving messages from clients.
+        while ( 1 ) {
+            // Receive a message from client
+            int readBytes = recv(clientSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
+            if ( readBytes < 0 ) {
+                fprintf(stderr, "[ERROR] An error occurred while receiving message from the client: %s\nThe connection is going to close.\n", strerror(errno));
+                break;
+            }
+            fprintf(stderr, "[INFO] Received a message from client [%s]: %s\n", inet_ntoa(clientSocketAddress.sin_addr), inputBuffer);
+
+            // Complete receiving message from client
+            if ( readBytes == 0 || strcmp("BYE", inputBuffer) == 0 ) {
+                break;
+            }
+
+            // Send a message to client
+            strcpy(outputBuffer, inputBuffer);
+            if ( send(clientSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
+                fprintf(stderr, "[ERROR] An error occurred while sending message to the client: %s\nThe connection is going to close.\n", strerror(errno));
+                break;
+            }
         }
 
         // Close socket for this client
         close(clientSocketFileDescriptor);
+        fprintf(stderr, "[INFO] Client %s disconnected.\n", inet_ntoa(clientSocketAddress.sin_addr));
     }
 
     /*
