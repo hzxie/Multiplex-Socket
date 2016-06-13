@@ -16,7 +16,7 @@
 
 #define MAX_PENDING_CONNECTIONS 4
 #define MAX_CONNECTIONS         32
-#define BUFFER_SIZE             1025
+#define BUFFER_SIZE             1024
 
 /**
  * Fix undefined reference to `max' issue.
@@ -250,13 +250,6 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
             fprintf(stderr, "[INFO][TCP] Connection established with %s:%d\n", 
                 inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
 
-            // Send welcome message to client
-            char* pMessage = "Connection established.";
-            if ( send(clientSocketFD, pMessage, strlen(pMessage) + 1, 0) == -1 ) {
-                fprintf(stderr, "[ERROR][TCP] An error occurred while sending message to the client: %s\nThe connection is going to close.\n", strerror(errno));
-                continue;
-            }
-
             // Register file descriptors for sockets
             int clientSocketFDIndex = registerNewSocket(clientSocketFD, clientSocketFileDescriptors, MAX_CONNECTIONS);
             if ( clientSocketFDIndex == -1 ) {
@@ -282,8 +275,8 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
                 inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), inputBuffer);
 
             // Send a message to client
-            toUppercaseString(outputBuffer, inputBuffer);
-            if ( sendto(udpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0, (struct sockaddr *)(&clientSocketAddress), sockaddrSize) == -1 ) {
+            toUppercaseString(inputBuffer, outputBuffer);
+            if ( sendto(udpSocketFileDescriptor, outputBuffer, strlen(outputBuffer), 0, (struct sockaddr *)(&clientSocketAddress), sockaddrSize) == -1 ) {
                 fprintf(stderr, "[ERROR][UDP] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
                     inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
             }
@@ -314,13 +307,31 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
                         inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
 
                     continue;
-                } else if ( FALSE ) {
+                } else if ( strncmp("GET", inputBuffer, 3) ==0 ) {
                     // Send file stream to the client
-                    
+                    char* fileName = "/home/hzxie/Desktop/NOTE";
+                    FILE* inputFile = fopen(fileName, "rb");
+
+                    char* pMessage = "ACCEPT";
+                    if ( inputFile == NULL ) {
+                        pMessage = "REJECT";
+                    }
+                    send(clientSocketFD, pMessage, strlen(pMessage), 0);
+
+                    // Send file stream
+                    int readBytes = 0;
+                    while ( (readBytes = fread(outputBuffer, sizeof(char), BUFFER_SIZE, inputFile)) > 0 ) {
+                        send(clientSocketFD, outputBuffer, readBytes, 0);
+                        fprintf(stderr, "[INFO] Sent %lu bytes\n", strlen(outputBuffer));
+                        memset(outputBuffer, 0, BUFFER_SIZE);
+                    }
+                    fclose(inputFile);
+                    fprintf(stderr, "[INFO][TCP] Send file stream to client %s:%d: %s\n", 
+                        inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), inputBuffer);
                 } else {
                     // Send a message to client
                     toUppercaseString(inputBuffer, outputBuffer);
-                    if ( send(clientSocketFD, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
+                    if ( send(clientSocketFD, outputBuffer, strlen(outputBuffer), 0) == -1 ) {
                         clientSocketFileDescriptors[i] = 0;
 
                         fprintf(stderr, "[ERROR] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 

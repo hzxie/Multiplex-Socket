@@ -97,15 +97,7 @@ int main(int argc, char *argv[]) {
     char outputBuffer[BUFFER_SIZE] = {0};
     fprintf(stderr, "[INFO] Congratulations! Connection established with server.\nType \'BYE\' to disconnect.\n");
     do {
-        // Receive a message from client
-        int readBytes = recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
-        if ( readBytes < 0 ) {
-            fprintf(stderr, "[ERROR] An error occurred while receiving message from the server: %s\nThe connection is going to close.\n", strerror(errno));
-            break;
-        }
-        fprintf(stderr, "[INFO] Received a message from server: %s\n", inputBuffer);
-        
-        // Send a message to client
+        // Send a message to server
         fprintf(stderr, "> ");
         scanf("%s", outputBuffer);
 
@@ -114,9 +106,42 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        // Stop sending message to server
         if ( strcmp("BYE", outputBuffer) == 0 ) {
+            // Stop sending message to server
             break;
+        } else if ( strncmp("GET", outputBuffer, 3) ==0 ) {
+            // Receive a message to confirm whether the file exists
+            recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
+            if ( !strncmp("ACCEPT", inputBuffer, 6) == 0 ) {
+                fprintf(stderr, "[WARN] Server refused to send this file. Maybe file does not exist.\n");
+                continue;
+            }
+
+            // Receive file stream
+            fprintf(stderr, "> Save to: ");
+            scanf("%s", outputBuffer);
+            FILE* outputFile = fopen(outputBuffer, "wb");
+
+            int readBytes = 0;
+            while ( (readBytes = recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0)) > 0 ) {
+                fprintf(stderr, "[INFO] Received %lu bytes\n", strlen(inputBuffer));
+                fwrite(inputBuffer, sizeof(char), readBytes, outputFile);
+                memset(inputBuffer, 0, BUFFER_SIZE);
+
+                if ( readBytes < BUFFER_SIZE ) {
+                    break;
+                }
+            }
+            fclose(outputFile);
+        } else {
+            // Receive a message from client
+            int readBytes = recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
+            if ( readBytes < 0 ) {
+                fprintf(stderr, "[ERROR] An error occurred while receiving message from the server: %s\nThe connection is going to close.\n", strerror(errno));
+                break;
+            }
+            fprintf(stderr, "[INFO] Received a message from server: %s\n", inputBuffer);
+            memset(inputBuffer, 0, BUFFER_SIZE);
         }
     } while ( 1 );
 
