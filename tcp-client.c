@@ -1,8 +1,10 @@
 #include <errno.h>
+#include <fcntl.h>      // for opening socket
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <netdb.h>
+#include <unistd.h>     // for closing socket
 #include <sys/socket.h>
 #include <sys/types.h>
 
@@ -18,18 +20,18 @@
 int main(int argc, char *argv[]) {
     if ( argc != 3 ) {
         fprintf(stderr," Usage: %s Host PortNumber\n",argv[0]);
-        exit(1);
+        return EXIT_FAILURE;
     }
     
     struct hostent* pHost = gethostbyname(argv[1]);
     if ( pHost == NULL ) {
         fprintf(stderr, "Usage: %s Host PortNumber\n", argv[0]);
-        exit(1);
+        return EXIT_FAILURE;
     }
     int portNumber = atoi(argv[2]);
     if ( portNumber <= 0 ) {
         fprintf(stderr, "Usage: %s Host PortNumber\n", argv[0]);
-        exit(1);
+        return EXIT_FAILURE;
     }
 
     /*
@@ -45,7 +47,7 @@ int main(int argc, char *argv[]) {
     int tcpSocketFileDescriptor = socket(AF_INET, SOCK_STREAM, 0);
     if ( tcpSocketFileDescriptor == -1 ) {
         fprintf(stderr, "[ERROR] Failed to create socket: %s\n", strerror(errno));
-        exit(127);
+        return EXIT_FAILURE;
     }
 
     /*
@@ -88,17 +90,25 @@ int main(int argc, char *argv[]) {
      */
     if ( connect(tcpSocketFileDescriptor, (struct sockaddr *)(&serverSocketAddress), sizeof(struct sockaddr_in)) == -1 ) {
         fprintf(stderr, "[ERROR] Failed to connect to server: %s\n", strerror(errno));
-        exit(127);
+        return EXIT_FAILURE;
     }
 
     char inputBuffer[BUFFER_SIZE] = {0};
     char outputBuffer[BUFFER_SIZE] = {0};
     fprintf(stderr, "[INFO] Congratulations! Connection established with server.\nType \'BYE\' to disconnect.\n");
     do {
-        fprintf(stderr, "> ");
-        scanf("%s", outputBuffer, BUFFER_SIZE);
-
+        // Receive a message from client
+        int readBytes = recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
+        if ( readBytes < 0 ) {
+            fprintf(stderr, "[ERROR] An error occurred while receiving message from the server: %s\nThe connection is going to close.\n", strerror(errno));
+            break;
+        }
+        fprintf(stderr, "[INFO] Received a message from server: %s\n", inputBuffer);
+        
         // Send a message to client
+        fprintf(stderr, "> ");
+        scanf("%s", outputBuffer);
+
         if ( send(tcpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
             fprintf(stderr, "[ERROR] An error occurred while sending message to the server: %s\nThe connection is going to close.\n", strerror(errno));
             break;
@@ -108,14 +118,6 @@ int main(int argc, char *argv[]) {
         if ( strcmp("BYE", outputBuffer) == 0 ) {
             break;
         }
-        
-        // Receive a message from client
-        int readBytes = recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
-        if ( readBytes < 0 ) {
-            fprintf(stderr, "[ERROR] An error occurred while receiving message from the server: %s\nThe connection is going to close.\n", strerror(errno));
-            break;
-        }
-        fprintf(stderr, "[INFO] Received a message from server: %s\n", inputBuffer);
     } while ( 1 );
 
     /*

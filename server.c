@@ -1,14 +1,36 @@
 #include <errno.h>
+#include <fcntl.h>      // for opening socket
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>     // for closing socket
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 
-#define MAX_PENDING_CONNECTIONS 32
-#define BUFFER_SIZE             1024
+
+#define TRUE                    1
+#define FALSE                   0
+
+#define MAX_PENDING_CONNECTIONS 4
+#define MAX_CONNECTIONS         32
+#define BUFFER_SIZE             1025
+
+/**
+ * Fix undefined reference to `max' issue.
+ */
+static inline int max(int a, int b) {
+    return (a > b) ? a : b;
+}
+
+/**
+ * Prototypes of functions.
+ */
+int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor);
+int registerNewSocket(int clientSocketFD, int* clientSocketFileDescriptors, int n);
 
 /**
  * The entrance of the server application.
@@ -20,13 +42,13 @@
 int main(int argc, char* argv[]) {
     if ( argc != 2 ) {
         fprintf(stderr, "Usage: %s PortNumber\n", argv[0]);
-        exit(1);
+        return EXIT_FAILURE;
     } 
 
     int portNumber = atoi(argv[1]);
     if ( portNumber <= 0 ) {
         fprintf(stderr, "Usage: %s PortNumber\n", argv[0]);
-        exit(1);
+        return EXIT_FAILURE;
     }
 
     /*
@@ -44,7 +66,7 @@ int main(int argc, char* argv[]) {
 
     if ( tcpSocketFileDescriptor == -1 || udpSocketFileDescriptor == -1 ) {
         fprintf(stderr, "[ERROR] Failed to create socket: %s\n", strerror(errno));
-        exit(127);
+        return EXIT_FAILURE;
     }
 
     /*
@@ -68,7 +90,7 @@ int main(int argc, char* argv[]) {
      *
      * Both of them are defined in netinet/in.h
      */
-    int sockaddrSize = sizeof(struct sockaddr);
+    socklen_t sockaddrSize = sizeof(struct sockaddr);
     struct sockaddr_in serverSocketAddress;
     bzero(&serverSocketAddress, sockaddrSize);
     serverSocketAddress.sin_family = AF_INET;
@@ -105,11 +127,11 @@ int main(int argc, char* argv[]) {
      */
     if ( bind(tcpSocketFileDescriptor, (struct sockaddr*)(&serverSocketAddress), sockaddrSize) == -1) {
         fprintf(stderr, "[ERROR] Failed to bind TCP socket file descriptor to specified address: %s\n", strerror(errno));
-        exit(127);
+        return EXIT_FAILURE;
     }
     if ( bind(udpSocketFileDescriptor, (struct sockaddr*)(&serverSocketAddress), sockaddrSize) == -1) {
         fprintf(stderr, "[ERROR] Failed to bind UDP socket file descriptor to specified address: %s\n", strerror(errno));
-        exit(127);
+        return EXIT_FAILURE;
     }
 
     /*
@@ -123,58 +145,186 @@ int main(int argc, char* argv[]) {
      */
     if ( listen(tcpSocketFileDescriptor, MAX_PENDING_CONNECTIONS) == -1 ) {
         fprintf(stderr, "[ERROR] Failed to listen to the TCP socket: %s\n", strerror(errno));
-        exit(127);
+        return EXIT_FAILURE;
     }
 
     /*
-     * Infinite Loop for receiving connections from clients. 
+     * Prepare for handling TCP and UDP connections using select.
      */
-    char inputBuffer[BUFFER_SIZE] = {0};
-    char outputBuffer[BUFFER_SIZE] = {0};
-
-    while ( 1 ) {
-        struct sockaddr_in clientSocketAddress;
-        int clientSocketFileDescriptor = accept(tcpSocketFileDescriptor, (struct sockaddr *)(&clientSocketAddress), &sockaddrSize);
-
-        if ( clientSocketFileDescriptor == -1 ) {
-            fprintf(stderr, "[WARN] Failed to accpet a socket from client: %s\n", strerror(errno));
-            continue;
-        }
-        fprintf(stderr, "[INFO] Connection established with %s\n", inet_ntoa(clientSocketAddress.sin_addr));
-
-        // Infinite Loop for receiving messages from clients.
-        while ( 1 ) {
-            // Receive a message from client
-            int readBytes = recv(clientSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
-            if ( readBytes < 0 ) {
-                fprintf(stderr, "[ERROR] An error occurred while receiving message from the client: %s\nThe connection is going to close.\n", strerror(errno));
-                break;
-            }
-            fprintf(stderr, "[INFO] Received a message from client [%s]: %s\n", inet_ntoa(clientSocketAddress.sin_addr), inputBuffer);
-
-            // Complete receiving message from client
-            if ( readBytes == 0 || strcmp("BYE", inputBuffer) == 0 ) {
-                break;
-            }
-
-            // Send a message to client
-            strcpy(outputBuffer, inputBuffer);
-            if ( send(clientSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
-                fprintf(stderr, "[ERROR] An error occurred while sending message to the client: %s\nThe connection is going to close.\n", strerror(errno));
-                break;
-            }
-        }
-
-        // Close socket for this client
-        close(clientSocketFileDescriptor);
-        fprintf(stderr, "[INFO] Client %s disconnected.\n", inet_ntoa(clientSocketAddress.sin_addr));
+    int exitCode = acceptConnections(tcpSocketFileDescriptor, udpSocketFileDescriptor);
+    if ( exitCode == -1 ) {
+        fprintf(stderr, "[ERROR] Server exit with an error: %s\n", strerror(errno));
     }
 
     /*
      * Close Sockets.
+     *
+     * close(tcpSocketFileDescriptor);
+     * close(udpSocketFileDescriptor);
      */
-    close(tcpSocketFileDescriptor);
-    close(udpSocketFileDescriptor);
+    return EXIT_SUCCESS;
+}
 
-    return 0;
+/**
+ * Connections handler for the server.
+ * @param  tcpSocketFileDescriptor the file descriptor of TCP socket
+ * @param  udpSocketFileDescriptor the file descriptor of UDP socket
+ * @return -1 if a severe error occurred in this procedure
+ */
+int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) {
+    /**
+     * The file descriptor used to check readability, if characters become available for reading.
+     */
+    fd_set readFileDescriptorSet;
+
+    /**
+     * Buffers for sending and receiving data.
+     */
+    char inputBuffer[BUFFER_SIZE] = {0};
+    char outputBuffer[BUFFER_SIZE] = {0};
+
+    /**
+     * Client sockets.
+     */
+    socklen_t sockaddrSize = sizeof(struct sockaddr);
+    struct sockaddr_in clientSocketAddress;
+    int clientSocketFileDescriptors[MAX_CONNECTIONS] = {0};
+
+    /**
+     * Handle TCP and UDP connections.
+     */
+    while ( TRUE ) {
+        /**
+         * Clear the read file descriptor set.
+         */
+        FD_ZERO(&readFileDescriptorSet);
+
+        /**
+         * Add file descriptor of TCP and UDP to the set.
+         */
+        FD_SET(tcpSocketFileDescriptor, &readFileDescriptorSet);
+        FD_SET(udpSocketFileDescriptor, &readFileDescriptorSet);
+        int maxFileDescriptor = max(tcpSocketFileDescriptor, udpSocketFileDescriptor);
+
+        /**
+         * Add valid socket file descriptor to the read set.
+         */
+        int i = 0;
+        for ( i = 0; i < MAX_CONNECTIONS; ++ i ) {
+            int clientSocketFD = clientSocketFileDescriptors[i];
+
+            if ( clientSocketFD > 0 ) {
+                FD_SET(clientSocketFD, &readFileDescriptorSet);
+            }
+            if ( clientSocketFD > maxFileDescriptor ) {
+                maxFileDescriptor = clientSocketFD;
+            }
+        }
+
+        /*
+         * Wait for an activity on one of the sockets, timeout is NULL, so wait indefinitely.
+         * Function Prototype: int select(int nfds, fd_set *readset, fd_set *writeset,fd_set* exceptset, struct tim *timeout);
+         * Defined in sys/select.h
+         *
+         * @param nfds      the max ID of file descriptor to check
+         * @param readset   the file descriptor used to check readability
+         * @param writeset  the file descriptor used to check writability
+         * @param exceptset the file descriptor used to check exceptions
+         * @param timeout   the interval to be rounded up
+         * @return the number of file descriptors contained in the three returned descriptor sets
+         */
+        int events = select(maxFileDescriptor + 1, &readFileDescriptorSet, NULL, NULL, NULL);
+        if ( events == -1 && errno != EINTR ) {
+            fprintf(stderr, "[ERROR] An error occurred while monitoring sockets: %s\n", strerror(errno));
+        }
+
+        // New incoming TCP connection
+        if ( FD_ISSET(tcpSocketFileDescriptor, &readFileDescriptorSet) ) {
+            // Establish connection with client
+            int clientSocketFD = accept(tcpSocketFileDescriptor, (struct sockaddr *)(&clientSocketAddress), &sockaddrSize);
+
+            if ( clientSocketFD == -1 ) {
+                fprintf(stderr, "[WARN] Failed to accpet a socket from client: %s\n", strerror(errno));
+                continue;
+            }
+            fprintf(stderr, "[INFO] Connection established with %s:%d\n", 
+                inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
+
+            // Send welcome message to client
+            if ( send(clientSocketFD, "ACCEPT", strlen("ACCEPT") + 1, 0) == -1 ) {
+                fprintf(stderr, "[ERROR] An error occurred while sending message to the client: %s\nThe connection is going to close.\n", strerror(errno));
+                continue;
+            }
+
+            // Register file descriptors for sockets
+            int clientSocketFDIndex = registerNewSocket(clientSocketFD, clientSocketFileDescriptors, MAX_CONNECTIONS);
+            if ( clientSocketFDIndex == -1 ) {
+                fprintf(stderr, "[WARN] Failed to register the socket for client: %s:%d\n", 
+                    inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
+            } else {
+                fprintf(stderr, "[INFO] Socket #%d registered for the client: %s:%d\n", 
+                    clientSocketFDIndex, inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
+            }
+        }
+        
+        // New incoming UDP connection
+        if ( FD_ISSET(udpSocketFileDescriptor, &readFileDescriptorSet) ) {
+            // TODO: Handle UDP connections
+        }
+
+        // IO operation on some other sockets
+        for ( i = 0; i < MAX_CONNECTIONS; ++ i ) {
+            int clientSocketFD = clientSocketFileDescriptors[i];
+
+            if ( FD_ISSET(clientSocketFD, &readFileDescriptorSet) ) {
+                int readBytes = recv(clientSocketFD, inputBuffer, BUFFER_SIZE, 0);
+                
+                if ( readBytes < 0 ) {
+                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client [%s:%d]: %s\nThe connection is going to close.\n", 
+                        inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
+                    continue;
+                }
+                fprintf(stderr, "[INFO] Received a message from client [%s:%d]: %s\n", 
+                    inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), inputBuffer);
+
+                // Complete receiving message from client
+                if ( readBytes == 0 || strcmp("BYE", inputBuffer) == 0 ) {
+                    close(clientSocketFD);
+                    clientSocketFileDescriptors[i] = 0;
+
+                    continue;
+                }
+
+                // Send a message to client
+                strcpy(outputBuffer, inputBuffer);
+                if ( send(clientSocketFD, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
+                    clientSocketFileDescriptors[i] = 0;
+
+                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client [%s:%d]: %s\nThe connection is going to close.\n", 
+                        inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
+                }
+            } else {
+
+            }
+        }
+    }
+}
+
+/**
+ * Register a new file descriptor for new connections.
+ * @param  clientSocketFD              the file descriptor to register
+ * @param  clientSocketFileDescriptors the set of file descriptors
+ * @param  n                           the capcity of the set of file descriptors
+ * @return the index of the file descriptor in the set
+ */
+int registerNewSocket(int clientSocketFD, int* clientSocketFileDescriptors, int n) {
+    int i = 0;
+    for ( i = 0; i < n; ++ i ) {
+        if ( clientSocketFileDescriptors[i] == 0 ) {
+            clientSocketFileDescriptors[i] = clientSocketFD;
+            
+            return i;
+        }
+    }
+    return -1;
 }
