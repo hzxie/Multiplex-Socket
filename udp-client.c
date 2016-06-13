@@ -84,11 +84,18 @@ int main(int argc, char *argv[]) {
     do {
         // Send a message to client
         fprintf(stderr, "> ");
-        scanf("%s", outputBuffer);
+        fgets(outputBuffer, BUFFER_SIZE, stdin);
+        // Remove \n character at the end of the string
+        outputBuffer[strlen(outputBuffer) - 1] = 0;
 
         if ( sendto(udpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 
                 0, (struct sockaddr *)(&serverSocketAddress), sockaddrSize) == -1 ) {
             fprintf(stderr, "[ERROR] An error occurred while sending message to the server: %s\nThe connection is going to close.\n", strerror(errno));
+            break;
+        }
+
+        // Stop sending message to server
+        if ( strcmp("BYE", outputBuffer) == 0 ) {
             break;
         }
 
@@ -100,11 +107,6 @@ int main(int argc, char *argv[]) {
             break;
         }
         fprintf(stderr, "[INFO] Received a message from server: %s\n", inputBuffer);
-
-        // Stop sending message to server
-        if ( strcmp("BYE", outputBuffer) == 0 ) {
-            break;
-        }
     } while ( 1 );
 
     /*
