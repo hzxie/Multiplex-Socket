@@ -40,12 +40,12 @@ int main(int argc, char *argv[]) {
      * Defined in sys/socket.h
      *
      * @param domain:   AF_INET stands for Internet, AF_UNIX can only communicate between UNIX systems.
-     * @param type      the prototype to use, SOCK_STREAM stands for TCP and SOCK_DGRAM stands for UDP
+     * @param type      the prototype to use, SOCK_STREAM stands for udp and SOCK_DGRAM stands for UDP
      * @param protocol  if type is specified, this parameter can be assigned to 0.
      * @return -1 if socket is failed to create
      */
-    int tcpSocketFileDescriptor = socket(AF_INET, SOCK_STREAM, 0);
-    if ( tcpSocketFileDescriptor == -1 ) {
+    int udpSocketFileDescriptor = socket(AF_INET, SOCK_DGRAM, 0);
+    if ( udpSocketFileDescriptor == -1 ) {
         fprintf(stderr, "[ERROR] Failed to create socket: %s\n", strerror(errno));
         return EXIT_FAILURE;
     }
@@ -78,41 +78,28 @@ int main(int argc, char *argv[]) {
     serverSocketAddress.sin_addr=*((struct in_addr *)pHost->h_addr);
     serverSocketAddress.sin_port = htons(portNumber);
 
-    /*
-     * Connect to server.
-     * Function prototype: int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
-     * Defined in sys/socket.h and sys/types.h
-     *
-     * @param sockfd  the socket file descriptor
-     * @param my_addr the specified address of server
-     * @param addrlen the size of the struct sockaddr
-     * @return -1 if the operation failed
-     */
-    if ( connect(tcpSocketFileDescriptor, (struct sockaddr *)(&serverSocketAddress), sockaddrSize) == -1 ) {
-        fprintf(stderr, "[ERROR] Failed to connect to server: %s\n", strerror(errno));
-        return EXIT_FAILURE;
-    }
-
     char inputBuffer[BUFFER_SIZE] = {0};
     char outputBuffer[BUFFER_SIZE] = {0};
     fprintf(stderr, "[INFO] Congratulations! Connection established with server.\nType \'BYE\' to disconnect.\n");
     do {
+        // Send a message to client
+        fprintf(stderr, "> ");
+        scanf("%s", outputBuffer);
+
+        if ( sendto(udpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 
+                0, (struct sockaddr *)(&serverSocketAddress), sockaddrSize) == -1 ) {
+            fprintf(stderr, "[ERROR] An error occurred while sending message to the server: %s\nThe connection is going to close.\n", strerror(errno));
+            break;
+        }
+
         // Receive a message from client
-        int readBytes = recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
+        int readBytes = recvfrom(udpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 
+                            0, (struct sockaddr *)(&serverSocketAddress), &sockaddrSize);
         if ( readBytes < 0 ) {
             fprintf(stderr, "[ERROR] An error occurred while receiving message from the server: %s\nThe connection is going to close.\n", strerror(errno));
             break;
         }
         fprintf(stderr, "[INFO] Received a message from server: %s\n", inputBuffer);
-        
-        // Send a message to client
-        fprintf(stderr, "> ");
-        scanf("%s", outputBuffer);
-
-        if ( send(tcpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
-            fprintf(stderr, "[ERROR] An error occurred while sending message to the server: %s\nThe connection is going to close.\n", strerror(errno));
-            break;
-        }
 
         // Stop sending message to server
         if ( strcmp("BYE", outputBuffer) == 0 ) {
@@ -123,7 +110,8 @@ int main(int argc, char *argv[]) {
     /*
      * Close socket for client.
      */
-    close(tcpSocketFileDescriptor);
+    close(udpSocketFileDescriptor);
 
-    return 0;
+
+    return EXIT_SUCCESS;
 }

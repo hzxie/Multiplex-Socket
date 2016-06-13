@@ -11,7 +11,6 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
-
 #define TRUE                    1
 #define FALSE                   0
 
@@ -158,10 +157,10 @@ int main(int argc, char* argv[]) {
 
     /*
      * Close Sockets.
-     *
-     * close(tcpSocketFileDescriptor);
-     * close(udpSocketFileDescriptor);
      */
+    close(tcpSocketFileDescriptor);
+    close(udpSocketFileDescriptor);
+
     return EXIT_SUCCESS;
 }
 
@@ -244,32 +243,49 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
             int clientSocketFD = accept(tcpSocketFileDescriptor, (struct sockaddr *)(&clientSocketAddress), &sockaddrSize);
 
             if ( clientSocketFD == -1 ) {
-                fprintf(stderr, "[WARN] Failed to accpet a socket from client: %s\n", strerror(errno));
+                fprintf(stderr, "[WARN][TCP] Failed to accpet a socket from client: %s\n", strerror(errno));
                 continue;
             }
-            fprintf(stderr, "[INFO] Connection established with %s:%d\n", 
+            fprintf(stderr, "[INFO][TCP] Connection established with %s:%d\n", 
                 inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
 
             // Send welcome message to client
-            if ( send(clientSocketFD, "ACCEPT", strlen("ACCEPT") + 1, 0) == -1 ) {
-                fprintf(stderr, "[ERROR] An error occurred while sending message to the client: %s\nThe connection is going to close.\n", strerror(errno));
+            char* pMessage = "Connection established.";
+            if ( send(clientSocketFD, pMessage, strlen(pMessage) + 1, 0) == -1 ) {
+                fprintf(stderr, "[ERROR][TCP] An error occurred while sending message to the client: %s\nThe connection is going to close.\n", strerror(errno));
                 continue;
             }
 
             // Register file descriptors for sockets
             int clientSocketFDIndex = registerNewSocket(clientSocketFD, clientSocketFileDescriptors, MAX_CONNECTIONS);
             if ( clientSocketFDIndex == -1 ) {
-                fprintf(stderr, "[WARN] Failed to register the socket for client: %s:%d\n", 
+                fprintf(stderr, "[WARN][TCP] Failed to register the socket for client: %s:%d\n", 
                     inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
             } else {
-                fprintf(stderr, "[INFO] Socket #%d registered for the client: %s:%d\n", 
+                fprintf(stderr, "[INFO][TCP] Socket #%d registered for the client: %s:%d\n", 
                     clientSocketFDIndex, inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
             }
         }
         
         // New incoming UDP connection
         if ( FD_ISSET(udpSocketFileDescriptor, &readFileDescriptorSet) ) {
-            // TODO: Handle UDP connections
+            // Receive a message from client
+            int readBytes = recvfrom(udpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0, (struct sockaddr *)(&clientSocketAddress), &sockaddrSize);
+
+            if ( readBytes < 0 ) {
+                fprintf(stderr, "[ERROR][UDP] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
+                    inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
+                continue;
+            }
+            fprintf(stderr, "[INFO][UDP] Received a message from client %s:%d: %s\n", 
+                inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), inputBuffer);
+
+            // Send a message to client
+            strcpy(outputBuffer, inputBuffer);
+            if ( sendto(udpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0, (struct sockaddr *)(&clientSocketAddress), sockaddrSize) == -1 ) {
+                fprintf(stderr, "[ERROR][UDP] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
+                    inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
+            }
         }
 
         // IO operation on some other sockets
@@ -277,20 +293,23 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
             int clientSocketFD = clientSocketFileDescriptors[i];
 
             if ( FD_ISSET(clientSocketFD, &readFileDescriptorSet) ) {
+                // Receive a message from client
                 int readBytes = recv(clientSocketFD, inputBuffer, BUFFER_SIZE, 0);
                 
                 if ( readBytes < 0 ) {
-                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client [%s:%d]: %s\nThe connection is going to close.\n", 
+                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
                         inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
                     continue;
                 }
-                fprintf(stderr, "[INFO] Received a message from client [%s:%d]: %s\n", 
+                fprintf(stderr, "[INFO] Received a message from client %s:%d: %s\n", 
                     inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), inputBuffer);
 
                 // Complete receiving message from client
                 if ( readBytes == 0 || strcmp("BYE", inputBuffer) == 0 ) {
                     close(clientSocketFD);
                     clientSocketFileDescriptors[i] = 0;
+                    fprintf(stderr, "[INFO] Client %s:%d disconnected.\n", 
+                        inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
 
                     continue;
                 }
@@ -300,11 +319,9 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
                 if ( send(clientSocketFD, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
                     clientSocketFileDescriptors[i] = 0;
 
-                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client [%s:%d]: %s\nThe connection is going to close.\n", 
+                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
                         inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
                 }
-            } else {
-
             }
         }
     }
