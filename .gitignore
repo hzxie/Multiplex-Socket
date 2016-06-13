@@ -28,6 +28,11 @@
 *.x86_64
 *.hex
 
+# Executables for the project
+server
+tcp-client
+udp-client
+
 # Debug files
 *.dSYM/
 *.su
