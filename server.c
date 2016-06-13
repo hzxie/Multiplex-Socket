@@ -309,8 +309,9 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
                     continue;
                 } else if ( strncmp("GET", inputBuffer, 3) ==0 ) {
                     // Send file stream to the client
-                    char* fileName = "/home/hzxie/Desktop/NOTE";
-                    FILE* inputFile = fopen(fileName, "rb");
+                    char filePath[BUFFER_SIZE] = {0};
+                    memcpy(filePath, &inputBuffer[4], strlen(inputBuffer) - 4);
+                    FILE* inputFile = fopen(filePath, "rb");
 
                     char* pMessage = "ACCEPT";
                     if ( inputFile == NULL ) {

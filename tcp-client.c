@@ -99,7 +99,9 @@ int main(int argc, char *argv[]) {
     do {
         // Send a message to server
         fprintf(stderr, "> ");
-        scanf("%s", outputBuffer);
+        fgets(outputBuffer, BUFFER_SIZE, stdin);
+        // Remove \n character at the end of the string
+        outputBuffer[strlen(outputBuffer) - 1] = 0;
 
         if ( send(tcpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
             fprintf(stderr, "[ERROR] An error occurred while sending message to the server: %s\nThe connection is going to close.\n", strerror(errno));
@@ -112,7 +114,7 @@ int main(int argc, char *argv[]) {
         } else if ( strncmp("GET", outputBuffer, 3) ==0 ) {
             // Receive a message to confirm whether the file exists
             recv(tcpSocketFileDescriptor, inputBuffer, BUFFER_SIZE, 0);
-            if ( !strncmp("ACCEPT", inputBuffer, 6) == 0 ) {
+            if ( strncmp("ACCEPT", inputBuffer, 6) != 0 ) {
                 fprintf(stderr, "[WARN] Server refused to send this file. Maybe file does not exist.\n");
                 continue;
             }
