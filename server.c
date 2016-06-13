@@ -30,6 +30,7 @@ static inline int max(int a, int b) {
  */
 int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor);
 int registerNewSocket(int clientSocketFD, int* clientSocketFileDescriptors, int n);
+void toUppercaseString(char* input, char* output);
 
 /**
  * The entrance of the server application.
@@ -281,7 +282,7 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
                 inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), inputBuffer);
 
             // Send a message to client
-            strcpy(outputBuffer, inputBuffer);
+            toUppercaseString(outputBuffer, inputBuffer);
             if ( sendto(udpSocketFileDescriptor, outputBuffer, strlen(outputBuffer) + 1, 0, (struct sockaddr *)(&clientSocketAddress), sockaddrSize) == -1 ) {
                 fprintf(stderr, "[ERROR][UDP] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
                     inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
@@ -297,30 +298,34 @@ int acceptConnections(int tcpSocketFileDescriptor, int udpSocketFileDescriptor) 
                 int readBytes = recv(clientSocketFD, inputBuffer, BUFFER_SIZE, 0);
                 
                 if ( readBytes < 0 ) {
-                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
+                    fprintf(stderr, "[ERROR][TCP] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
                         inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
                     continue;
                 }
-                fprintf(stderr, "[INFO] Received a message from client %s:%d: %s\n", 
+                fprintf(stderr, "[INFO][TCP] Received a message from client %s:%d: %s\n", 
                     inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), inputBuffer);
 
-                // Complete receiving message from client
+                // Handler for TCP messages
                 if ( readBytes == 0 || strcmp("BYE", inputBuffer) == 0 ) {
+                    // Complete receiving message from client
                     close(clientSocketFD);
                     clientSocketFileDescriptors[i] = 0;
-                    fprintf(stderr, "[INFO] Client %s:%d disconnected.\n", 
+                    fprintf(stderr, "[INFO][TCP] Client %s:%d disconnected.\n", 
                         inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port));
 
                     continue;
-                }
+                } else if ( FALSE ) {
+                    // Send file stream to the client
+                    
+                } else {
+                    // Send a message to client
+                    toUppercaseString(inputBuffer, outputBuffer);
+                    if ( send(clientSocketFD, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
+                        clientSocketFileDescriptors[i] = 0;
 
-                // Send a message to client
-                strcpy(outputBuffer, inputBuffer);
-                if ( send(clientSocketFD, outputBuffer, strlen(outputBuffer) + 1, 0) == -1 ) {
-                    clientSocketFileDescriptors[i] = 0;
-
-                    fprintf(stderr, "[ERROR] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
-                        inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
+                        fprintf(stderr, "[ERROR] An error occurred while sending message to the client %s:%d: %s\nThe connection is going to close.\n", 
+                            inet_ntoa(clientSocketAddress.sin_addr), ntohs(clientSocketAddress.sin_port), strerror(errno));
+                    }
                 }
             }
         }
@@ -344,4 +349,22 @@ int registerNewSocket(int clientSocketFD, int* clientSocketFileDescriptors, int 
         }
     }
     return -1;
+}
+
+/**
+ * Convert all lower case characters to upper case.
+ * @param input  the string for input
+ * @param output the string for output
+ */
+void toUppercaseString(char* input, char* output) {
+    for ( ; *input; ++ input, ++ output ) {
+        *output = *input;
+
+        if ( *input >= 'a' && *input <= 'z' ) {
+            *output = *input - 'a' + 'A';
+        }
+    }
+
+    // Add the end character of at the end of string
+    *output = 0;
 }
