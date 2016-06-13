@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -91,6 +92,7 @@ int main(int argc, char* argv[]) {
     int optionValue = 1;
     setsockopt(tcpSocketFileDescriptor, SOL_SOCKET, SO_REUSEADDR, &optionValue, sizeof(optionValue));
 
+    
     /*
      * Bind socket file descriptor to the port.
      * Function Prototype: int bind(int sockfd, struct sockaddr *my_addr, int addrlen)
