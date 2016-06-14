@@ -20,7 +20,7 @@ The sniffer uses a raw socket when put in recvfrom loop receives all incoming pa
 
 ## Setup
 
-> Note: You need to compile this project in Linux or Unix (including Mac OS X).
+> **Note:** You need to compile this project in Linux or Unix (including Mac OS X).
 
 ### Compile
 
@@ -58,7 +58,7 @@ GET <Path to the file in server>
 
 ### Run Packet Sniffers
 
-> NOTE: In Linux/Unix systems, you need root permissions to receive raw packets on an interface. This restriction is a security precaution, because a process that receives raw packets gains access to communications of all other processes and users using that interface.
+> **Note:** In Linux/Unix systems, you need root permissions to receive raw packets on an interface. This restriction is a security precaution, because a process that receives raw packets gains access to communications of all other processes and users using that interface.
 
 ```
 sudo ./packet-sniffer
