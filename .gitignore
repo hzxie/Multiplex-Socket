@@ -32,7 +32,11 @@
 server
 tcp-client
 udp-client
+packet-sniffer
 
 # Debug files
 *.dSYM/
 *.su
+
+# Log files
+*.log

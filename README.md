@@ -2,11 +2,21 @@
 
 ## Introduction
 
+This is the homework of *Advanced Programming for Internet* in [Harbin Institute of Technology](http://www.hit.edu.cn).
+
+The project contains two projects:
+
+### Multiplex Server
+
 A TCP and UDP multiplex service for file transfer service using select.
 
-The server can accept both TCP and UDP connections.
+The server can accept both TCP and UDP connections [Learn More](http://www.binarytides.com/packet-sniffer-code-c-linux/).
 
-This is the homework of *Advanced Programming for Internet* in [Harbin Institute of Technology](http://www.hit.edu.cn).
+### Packet Sniffer
+
+Packet sniffers that intercept the network traffic flowing in and out of a system through network interfaces.
+
+The sniffer uses a raw socket when put in recvfrom loop receives all incoming packets.
 
 ## Setup
 
@@ -16,7 +26,7 @@ This is the homework of *Advanced Programming for Internet* in [Harbin Institute
 
 You can simply compile this project use `make` command.
 
-### Run
+### Run Multiplex Server
 
 After the compile operation is successful, you can run the server:
 
@@ -46,7 +56,15 @@ GET <Path to the file in server>
 - Segment fault will be caused if you have no previlige to save the file in client.
 - The client may be blocked for unknown reason while transfering files.
 
-Enjoy!
+### Run Packet Sniffers
+
+> NOTE: In Linux/Unix systems, you need root permissions to receive raw packets on an interface. This restriction is a security precaution, because a process that receives raw packets gains access to communications of all other processes and users using that interface.
+
+```
+sudo ./packet-sniffer
+```
+
+All incoming packets will dumped into `packet-sniffer.log` file.
 
 ## License
 
