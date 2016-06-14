@@ -248,7 +248,7 @@ void parseIcmpPacket(unsigned char* buffer, int packetSize, FILE* logFile) {
     fprintf(logFile, "TCP Header\n");
     parseDataPayload(buffer + iphdrlen, sizeof(struct icmphdr), logFile);
          
-    fprintf(logFile, "Data Payload\n");    
+    fprintf(logFile, "Data Payload\n");
     parseDataPayload(buffer + hdrlen, packetSize - hdrlen, logFile);
 }
 
@@ -295,8 +295,12 @@ void parseTcpPacket(unsigned char* buffer, int packetSize, FILE* logFile) {
     fprintf(logFile, "TCP Header\n");
     parseDataPayload(buffer + iphdrlen, tcph->doff * 4, logFile);
          
-    fprintf(logFile, "Data Payload\n");    
-    parseDataPayload(buffer + hdrlen, packetSize - hdrlen, logFile);
+    fprintf(logFile, "Data Payload\n");
+    if ( packetSize - hdrlen != 0 ) {
+        parseDataPayload(buffer + hdrlen, packetSize - hdrlen, logFile);
+    } else {
+        fprintf(logFile, "    (Empty)\n");
+    }
 }
 
 /**
@@ -330,7 +334,7 @@ void parseUdpPacket(unsigned char* buffer, int packetSize, FILE* logFile) {
     fprintf(logFile, "UDP Header\n");
     parseDataPayload(buffer + iphdrlen, sizeof(struct udphdr), logFile);
 
-    fprintf(logFile, "Data Payload\n");    
+    fprintf(logFile, "Data Payload\n");
     parseDataPayload(buffer + hdrlen, packetSize - hdrlen, logFile);
 }
 
