@@ -4,19 +4,19 @@
 
 This is the homework of *Advanced Programming for Internet* in [Harbin Institute of Technology](http://www.hit.edu.cn).
 
-The project contains two projects:
+The repository contains two projects:
 
 ### Multiplex Server
 
 A TCP and UDP multiplex service for file transfer service using select.
 
-The server can accept both TCP and UDP connections [Learn More](http://www.binarytides.com/packet-sniffer-code-c-linux/).
+The server can accept both TCP and UDP connections.
 
 ### Packet Sniffer
 
 Packet sniffers that intercept the network traffic flowing in and out of a system through network interfaces.
 
-The sniffer uses a raw socket when put in recvfrom loop receives all incoming packets.
+The sniffer uses a raw socket when put in recvfrom loop receives all incoming packets [Learn More](http://www.binarytides.com/packet-sniffer-code-c-linux/).
 
 ## Setup
 
